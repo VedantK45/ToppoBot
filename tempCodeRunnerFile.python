@@ -1,0 +1,33 @@
+# app.py
+
+import os
+import streamlit as st
+from document_loader import load_documents, split_into_chunks
+from vector_store import create_embeddings, build_faiss_index, save_index, load_index, search
+
+st.set_page_config(page_title="ToppoBot", layout="centered")
+st.title("📄 ToppoBot — Document Chatbot")
+
+# Step 1: Load or build index
+if not os.path.exists("index/vector.index"):
+    with st.spinner("📚 Processing documents..."):
+        raw_docs = load_documents("docs")
+        chunks = []
+        for doc in raw_docs:
+            chunks.extend(split_into_chunks(doc))
+        embeddings = create_embeddings(chunks)
+        index = build_faiss_index(embeddings)
+        save_index(index, chunks)
+    st.success("✅ Documents indexed successfully!")
+else:
+    index, chunks = load_index("index")
+
+# Step 2: Ask a question
+query = st.text_input("🔍 Ask something about our film products:")
+
+if query:
+    with st.spinner("🔎 Searching..."):
+        answers = search(query, index, chunks)
+        st.markdown("### 📌 Top Answers:")
+        for i, ans in enumerate(answers):
+            st.markdown(f"**{i + 1}.** {ans}")
