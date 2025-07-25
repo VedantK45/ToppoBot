@@ -1,6 +1,8 @@
 import os
-from langchain_community.document_loaders import PyPDFLoader
-
+import re
+import pdfplumber
+from langchain_community.document_loaders import UnstructuredExcelLoader
+from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langdetect import detect
 
@@ -15,30 +17,59 @@ def clean_text(text):
     cleaned = []
     for line in lines:
         line = line.strip()
-        if line and is_english(line):
-            cleaned.append(line)
+
+        # Skip empty lines or non-English lines
+        if not line or not is_english(line):
+            continue
+
+        # Skip page numbers or lines that are only numbers/symbols
+        if re.match(r'page\s*\d+', line.lower()) or re.match(r'^[\d\s\W_]+$', line):
+            continue
+
+        cleaned.append(line)
+
     return " ".join(cleaned)
 
 def load_documents(doc_dir):
     documents = []
     print(f"📁 Looking in: {doc_dir}")
+
     for filename in os.listdir(doc_dir):
+        full_path = os.path.join(doc_dir, filename)
+
         if filename.endswith(".pdf"):
-            full_path = os.path.join(doc_dir, filename)
-            print(f"📄 Loading: {full_path}")
+            print(f"📄 Loading PDF: {full_path}")
             try:
-                loader = PyPDFLoader(full_path)
-                for doc in loader.load():
+                with pdfplumber.open(full_path) as pdf:
+                    for i, page in enumerate(pdf.pages):
+                        text = page.extract_text()
+                        if text:
+                            cleaned = clean_text(text)
+                            if cleaned:
+                                documents.append(Document(page_content=cleaned, metadata={"source": full_path, "page": i+1}))
+            except Exception as e:
+                print(f"❌ Failed to load {filename}: {e}")
+
+        elif filename.endswith(".xlsx"):
+            print(f"📊 Loading Excel: {full_path}")
+            try:
+                loader = UnstructuredExcelLoader(full_path)
+                docs = loader.load()
+                for doc in docs:
                     cleaned = clean_text(doc.page_content)
-                    if cleaned.strip():
+                    if cleaned:
                         doc.page_content = cleaned
                         documents.append(doc)
             except Exception as e:
                 print(f"❌ Failed to load {filename}: {e}")
-    print(f"✅ Loaded {len(documents)} documents.")
+
+    print(f"✅ Loaded {len(documents)} cleaned documents.")
     return documents
 
-
-def split_documents(documents, chunk_size=200, chunk_overlap=20):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+def split_documents(documents, chunk_size=1100, chunk_overlap=250):
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ".", "!", "?", " ", ""]
+    )
     return splitter.split_documents(documents)
