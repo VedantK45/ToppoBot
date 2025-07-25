@@ -2,7 +2,7 @@
 
 import os
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # Use SentenceTransformer for embedding
 embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
