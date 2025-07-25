@@ -1,23 +1,72 @@
+import os
 import streamlit as st
-from vector_store import load_vector_store
+from dotenv import load_dotenv
 from rag_engine import RAGEngine
+from vector_store import load_vector_store
 
-st.set_page_config(page_title="ToppoBot", layout="wide")
-st.title("🤖 ToppoBot - Product Bot From Toppan")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="ToppoBot", layout="centered")
+st.title("🤖 ToppoBot – Product Chatbot From Toppan")
+st.markdown("Hello and Greetings of the day!")
 
-# ✅ Use the full path to the GGUF model file, not just the folder
-MODEL_PATH = r"C:\Users\super\OneDrive\Documents\Desktop\ToppoBot\models\TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf"
+# --- ENV VARS ---
+load_dotenv()
 
-@st.cache_resource
-def setup_rag():
-    vector_store = load_vector_store("faiss_index")
-    return RAGEngine(MODEL_PATH, vector_store)
+# --- INIT RAG ---
+if "rag" not in st.session_state:
+    st.session_state.rag = RAGEngine(load_vector_store("faiss_index"))
 
-rag = setup_rag()
+# --- SESSION STATE DEFAULTS ---
+st.session_state.setdefault("query", "")
+st.session_state.setdefault("response", "")
+st.session_state.setdefault("follow_ups", [])
+st.session_state.setdefault("input_text", "")
 
-query = st.text_input("Greetings From ToppoBot!", placeholder="Ask something about our products:")
-if st.button("Submit") and query:
-    with st.spinner("Thinking..."):
-        answer = rag.query(query)
-    st.markdown("### Answer:")
-    st.write(answer)
+# --- UI ---
+col1, col2 = st.columns([5, 1])
+
+with col1:
+    input_text = st.text_input(
+        label="Ask your question",
+        value=st.session_state.input_text,
+        placeholder="Type your question and press Enter...",
+        label_visibility="collapsed",
+        key="input_text"
+    )
+
+with col2:
+    if st.button("❌ Clear", use_container_width=True):
+        # Clear variables & rerun
+        for key in ["query", "response", "follow_ups", "input_text"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+# --- HANDLE INPUT ON ENTER ---
+if input_text and input_text != st.session_state.query:
+    st.session_state.query = input_text
+
+    with st.spinner("Generating answer..."):
+        response = st.session_state.rag.query(input_text)
+
+        if "💬 Follow-up suggestion:" in response:
+            main_answer, follow_up_text = response.split("💬 Follow-up suggestion:", 1)
+            follow_ups = [line.strip(" 1234567890.-•") for line in follow_up_text.strip().split("\n") if line.strip()]
+        else:
+            main_answer = response
+            follow_ups = []
+
+        st.session_state.response = main_answer
+        st.session_state.follow_ups = follow_ups
+
+# --- OUTPUT ---
+if st.session_state.response:
+    st.markdown("### 🤖 Answer:")
+    st.markdown(st.session_state.response)
+
+# --- FOLLOW-UP AS TEXT (embedded above in markdown) ---
+if st.session_state.follow_ups:
+    st.markdown("### 💬 Follow-up suggestions:")
+    for follow_up in st.session_state.follow_ups:
+        st.markdown(f"- {follow_up}")
+
